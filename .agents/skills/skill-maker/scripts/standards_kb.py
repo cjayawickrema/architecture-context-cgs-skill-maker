@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Standards Knowledge Base & Precedence Query Engine.
+"""Standards Knowledge Base & Vector Precedence Query Engine.
 
-Scans the peer standards repositories (cyber-sec-standards, cloud-gov-standards,
-enterprise-arch-standards), extracts normative guardrails, and returns them
-ordered by strict enterprise precedence (CSS > CGS > EAS).
+Indexes enterprise standards (CSS, CGS, EAS) into a persistent SQLite Vector DB
+and performs vector semantic search with strict enterprise precedence ranking.
 
 Usage:
-  python3 standards_kb.py --query "database persistence terraform"
+  python3 standards_kb.py --query "relational database CMEK encryption"
+  python3 standards_kb.py --reindex
   python3 standards_kb.py --all --json
 """
 import argparse
@@ -16,18 +16,20 @@ import re
 import subprocess
 import sys
 
+# Import local vector database
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vector_db import StandardsVectorDB, PRECEDENCE_WEIGHTS
+
 
 def find_workspace_root():
     """Locate the root directory containing the standards repositories."""
     current = os.path.dirname(os.path.abspath(__file__))
-    # Walk upwards looking for peer directories
     while current and current != os.path.dirname(current):
         if (os.path.isdir(os.path.join(current, "cyber-sec-standards")) or
             os.path.isdir(os.path.join(current, "cloud-gov-standards")) or
             os.path.isdir(os.path.join(current, "enterprise-arch-standards"))):
             return current
         current = os.path.dirname(current)
-    # Default fallback
     return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../.."))
 
 
@@ -54,18 +56,6 @@ REPOS_PRECEDENCE = [
     },
 ]
 
-NORMATIVE_HEADINGS = [
-    "normative guardrails",
-    "core principles",
-    "declarative",
-    "decision matrix",
-    "architectural baseline",
-    "resource & topology matrix",
-    "finops & sizing boundaries",
-    "mandatory metadata",
-    "prohibited topologies",
-]
-
 STANDARD_FILE_RE = re.compile(r"^[A-Za-z]+_\d+.*\.md$")
 
 
@@ -85,51 +75,55 @@ def is_standard_file(filename):
     return bool(STANDARD_FILE_RE.match(filename))
 
 
-def extract_sections(text):
-    """Extract standard sections and normative rules."""
-    sections = []
-    current_title = None
+def chunk_standard_document(repo_info, filename, raw_text, commit_sha):
+    """Break standard markdown into section-level semantic chunks for vector indexing."""
+    chunks = []
+    current_title = "Overview & Context"
     buffer = []
 
-    for line in text.splitlines():
+    for line in raw_text.splitlines():
         m = re.match(r"^(#{1,6})\s+(.*)$", line)
         if m:
-            if current_title is not None:
-                sections.append((current_title, "\n".join(buffer).strip()))
+            if buffer:
+                content = "\n".join(buffer).strip()
+                if content:
+                    chunk_id = f"{repo_info['id']}::{filename}::{current_title}"
+                    chunks.append({
+                        "id": chunk_id,
+                        "repo_name": repo_info["name"],
+                        "standard_code": repo_info["id"],
+                        "precedence_rank": repo_info["rank"],
+                        "file_name": filename,
+                        "commit_sha": commit_sha,
+                        "section_title": current_title,
+                        "content": content,
+                    })
             current_title = m.group(2).strip()
             buffer = []
-        elif current_title is not None:
+        else:
             buffer.append(line)
 
-    if current_title is not None:
-        sections.append((current_title, "\n".join(buffer).strip()))
+    if buffer:
+        content = "\n".join(buffer).strip()
+        if content:
+            chunk_id = f"{repo_info['id']}::{filename}::{current_title}"
+            chunks.append({
+                "id": chunk_id,
+                "repo_name": repo_info["name"],
+                "standard_code": repo_info["id"],
+                "precedence_rank": repo_info["rank"],
+                "file_name": filename,
+                "commit_sha": commit_sha,
+                "section_title": current_title,
+                "content": content,
+            })
 
-    normative_parts = []
-    for title, content in sections:
-        if any(h in title.lower() for h in NORMATIVE_HEADINGS) and content:
-            normative_parts.append(f"### {title}\n{content}")
-
-    if normative_parts:
-        return "\n\n".join(normative_parts)
-    return text.strip()
-
-
-def score_relevance(text, terms):
-    if not terms:
-        return 1.0
-    text_low = text.lower()
-    score = 0
-    for term in terms:
-        term_low = term.lower().strip()
-        if not term_low:
-            continue
-        matches = len(re.findall(r"\b" + re.escape(term_low) + r"\b", text_low))
-        score += matches
-    return score
+    return chunks
 
 
-def scan_standards(query_terms=None):
-    results = []
+def sync_vector_db(vdb, force=False):
+    """Scan peer standards repos and update the vector database if commit SHAs changed."""
+    total_indexed = 0
 
     for repo_info in REPOS_PRECEDENCE:
         repo_dir = os.path.join(WORKSPACE_ROOT, repo_info["name"])
@@ -137,7 +131,12 @@ def scan_standards(query_terms=None):
             continue
 
         sha = get_commit_sha(repo_dir)
+        last_sha = vdb.get_sync_state(repo_info["name"])
 
+        if not force and last_sha == sha and vdb.count() > 0:
+            continue
+
+        # Re-index all standard files in this repo
         for fname in sorted(os.listdir(repo_dir)):
             if not is_standard_file(fname):
                 continue
@@ -149,59 +148,66 @@ def scan_standards(query_terms=None):
             except Exception:
                 continue
 
-            rel_score = score_relevance(raw_text, query_terms) if query_terms else 1.0
-            if query_terms and rel_score == 0:
-                continue
+            chunks = chunk_standard_document(repo_info, fname, raw_text, sha)
+            vdb.index_chunks(chunks)
+            total_indexed += len(chunks)
 
-            rules = extract_sections(raw_text)
+        vdb.update_sync_state(repo_info["name"], sha)
 
-            results.append({
-                "precedence_rank": repo_info["rank"],
-                "standard_code": repo_info["id"],
-                "repo_name": repo_info["name"],
-                "file_name": fname,
-                "commit_sha": sha,
-                "relevance_score": rel_score,
-                "rules": rules,
-                "raw_text": raw_text,
-            })
-
-    # Sort strictly by Precedence Rank first, then Relevance Score descending
-    results.sort(key=lambda x: (x["precedence_rank"], -x["relevance_score"]))
-    return results
+    return total_indexed
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Query enterprise standards with precedence")
-    parser.add_argument("--query", "-q", help="Search query or domain terms (space-separated)")
-    parser.add_argument("--all", "-a", action="store_true", help="Return all standards")
+    parser = argparse.ArgumentParser(description="Query enterprise standards with Vector DB & Precedence")
+    parser.add_argument("--query", "-q", help="Semantic search query (natural language or keywords)")
+    parser.add_argument("--reindex", "-r", action="store_true", help="Force re-indexing of all standards into Vector DB")
+    parser.add_argument("--all", "-a", action="store_true", help="Return all standards chunks")
+    parser.add_argument("--top-k", "-k", type=int, default=8, help="Number of vector results to retrieve")
     parser.add_argument("--json", "-j", action="store_true", help="Output raw JSON")
     args = parser.parse_args()
 
-    terms = args.query.split() if args.query else None
-    if not terms and not args.all:
-        terms = []
+    vdb = StandardsVectorDB()
+    indexed = sync_vector_db(vdb, force=args.reindex)
 
-    standards = scan_standards(terms)
+    if not args.query and not args.all:
+        if args.reindex:
+            print(f"✅ Re-indexed {indexed} chunks into Vector DB ({vdb.db_path})")
+            return
+        args.query = "database security cloud governance architecture"
+
+    if args.all:
+        matches = vdb.query("", top_k=100, min_score=0.0)
+    else:
+        matches = vdb.query(args.query, top_k=args.top_k, min_score=0.10)
 
     if args.json:
-        print(json.dumps({"count": len(standards), "standards": standards}, indent=2))
+        print(json.dumps({
+            "query": args.query,
+            "vector_db_path": vdb.db_path,
+            "total_chunks_in_db": vdb.count(),
+            "results_count": len(matches),
+            "results": matches,
+        }, indent=2))
         return
 
     print("================================================================================")
-    print("                  ENTERPRISE ARCHITECTURE & GOVERNANCE KB")
-    print("        Precedence Order: CyberSec (CSS) > CloudGov (CGS) > EntArch (EAS)")
+    print("           ENTERPRISE STANDARDS VECTOR DATABASE (SEMANTIC RAG)")
+    print("        Precedence: CSS (1.0x) > CGS (0.85x) > EAS (0.70x)")
+    print(f"        Vector DB: {vdb.db_path} | Indexed Chunks: {vdb.count()}")
     print("================================================================================\n")
+    print(f"🔍 Semantic Query: \"{args.query}\"\n")
 
-    if not standards:
-        print(f"No standards found matching query: {args.query or '(all)'}\n")
+    if not matches:
+        print("No matching standards found in Vector DB.\n")
         return
 
-    for item in standards:
+    for item in matches:
         print(f"[{item['standard_code']}] Rank #{item['precedence_rank']} | {item['repo_name']}/{item['file_name']}")
+        print(f"Section:    {item['section_title']}")
         print(f"Commit SHA: {item['commit_sha']}")
+        print(f"Vector Sim: {item['cosine_similarity']:.4f} | Weighted Score: {item['final_score']:.4f}")
         print("--------------------------------------------------------------------------------")
-        print(item["rules"])
+        print(item["content"])
         print("\n")
 
 
