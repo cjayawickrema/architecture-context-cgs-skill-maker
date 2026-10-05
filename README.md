@@ -26,10 +26,10 @@ $$\text{Cyber Security (CSS)} \succ \text{Cloud Governance (CGS)} \succ \text{En
 Clone or symlink this repository's `.agents/` folder into your project workspace:
 ```bash
 # Option A: Copy into your project's .agents directory
-cp -r enterprise-agent-skills/.agents/skills/<skill-name> my-service/.agents/skills/
+cp -r shared-skills/.agents/skills/<skill-name> my-service/.agents/skills/
 
 # Option B: Add as a Git Submodule
-git submodule add https://github.com/org/enterprise-agent-skills.git .agents
+git submodule add https://github.com/org/shared-skills.git .agents
 ```
 
 ### 2. Crafting New Skills

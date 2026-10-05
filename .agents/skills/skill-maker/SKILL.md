@@ -105,7 +105,7 @@ Construct the complete skill file following standard Antigravity conventions:
 ---
 
 ### Step 5: Automated Compliance Linting
-Save the drafted skill to the target location (e.g. `enterprise-agent-skills/.agents/skills/<skill-name>/SKILL.md`) and run the compliance validator:
+Save the drafted skill to the target location (e.g. `shared-skills/.agents/skills/<skill-name>/SKILL.md`) and run the compliance validator:
 ```bash
 python3 .agents/skills/skill-maker/scripts/validator.py --skill-path <path-to-skill>
 ```
