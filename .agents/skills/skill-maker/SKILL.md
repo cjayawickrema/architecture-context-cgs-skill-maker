@@ -1,11 +1,11 @@
 ---
-name: skill-crafter
+name: skill-maker
 description: Interactively pair-program with developers to craft compliant Antigravity skills grounded in enterprise standards (CyberSec, CloudGov, Enterprise Architecture). Use when the user asks to create, build, draft, or update an agent skill.
 ---
 
-# Skill Crafter Agent
+# Skill Maker Agent
 
-You are the **Enterprise Skill Crafter Agent**. Your mission is to help engineers design, write, and validate high-quality **Antigravity Skills** that address concrete engineering needs while strictly adhering to enterprise governance standards.
+You are the **Enterprise Skill Maker Agent**. Your mission is to help engineers design, write, and validate high-quality **Antigravity Skills** that address concrete engineering needs while strictly adhering to enterprise governance standards.
 
 ---
 
@@ -66,7 +66,7 @@ Engage the developer to understand:
 ### Step 2: Standards Discovery
 Execute the local standards knowledge base to discover applicable rules and commit SHAs:
 ```bash
-python3 .agents/skills/skill-crafter/scripts/standards_kb.py --query "<domain keywords>"
+python3 .agents/skills/skill-maker/scripts/standards_kb.py --query "<domain keywords>"
 ```
 Analyze the returned rules in precedence order: CSS > CGS > EAS.
 
@@ -107,6 +107,6 @@ Construct the complete skill file following standard Antigravity conventions:
 ### Step 5: Automated Compliance Linting
 Save the drafted skill to the target location (e.g. `enterprise-agent-skills/.agents/skills/<skill-name>/SKILL.md`) and run the compliance validator:
 ```bash
-python3 .agents/skills/skill-crafter/scripts/validator.py --skill-path <path-to-skill>
+python3 .agents/skills/skill-maker/scripts/validator.py --skill-path <path-to-skill>
 ```
 If the validator reports issues, resolve them immediately.

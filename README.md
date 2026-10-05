@@ -15,7 +15,7 @@ $$\text{Cyber Security (CSS)} \succ \text{Cloud Governance (CGS)} \succ \text{En
 
 | Skill Name | Directory | Description | Precedence / Standards Grounding |
 | :--- | :--- | :--- | :--- |
-| **`skill-crafter`** | [`.agents/skills/skill-crafter`](.agents/skills/skill-crafter/) | Interactive pair-programming agent that assists developers in crafting compliant Antigravity skills. | CSS, CGS, EAS Knowledge Base & Precedence Engine |
+| **`skill-maker`** | [`.agents/skills/skill-maker`](.agents/skills/skill-maker/) | Interactive pair-programming agent that assists developers in crafting compliant Antigravity skills. | CSS, CGS, EAS Knowledge Base & Precedence Engine |
 | **`setup-relational-db`** | [`.agents/skills/setup-relational-db`](.agents/skills/setup-relational-db/) | Provisions compliant PostgreSQL databases via Terraform (Aurora Serverless v2 + RDS with KMS CMEK, IAM auth, private subnets, Multi-AZ). | `CSS_1`, `CGS_1`, `EAS_1` |
 
 ---
@@ -33,10 +33,10 @@ git submodule add https://github.com/org/enterprise-agent-skills.git .agents
 ```
 
 ### 2. Crafting New Skills
-Use the included `skill-crafter` agent interactively in Antigravity chat:
+Use the included `skill-maker` agent interactively in Antigravity chat:
 > *"I want to create a skill for provisioning an SQS event-driven dead letter queue architecture."*
 
-The `skill-crafter` will:
+The `skill-maker` will:
 1. Query peer standards repositories (`cyber-sec-standards`, `cloud-gov-standards`, `enterprise-arch-standards`).
 2. Present mandatory guardrails and architectural constraints.
 3. Interactively draft and validate the new `SKILL.md`.
